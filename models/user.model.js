@@ -1,6 +1,5 @@
 const mongoose = require("mongoose");
 
-// Profile image schema for S3 details
 const profileImageSchema = new mongoose.Schema({
     url: { type: String, required: true },
     name: { type: String, required: true },
@@ -11,7 +10,6 @@ const profileImageSchema = new mongoose.Schema({
     isS3Upload: { type: Boolean, default: false }
 });
 
-// Investment plan schema
 const investmentPlanSchema = new mongoose.Schema({
     planName: { 
         type: String, 
@@ -30,7 +28,6 @@ const investmentPlanSchema = new mongoose.Schema({
     lastProfitDate: { type: Date }
 }, { _id: false });
 
-// Withdrawal history schema
 const withdrawalSchema = new mongoose.Schema({
     withdrawalId: { type: String, required: true },
     amount: { type: Number, required: true },
@@ -45,7 +42,6 @@ const withdrawalSchema = new mongoose.Schema({
     adminNotes: { type: String }
 }, { _id: true });
 
-// Referral earnings schema for commission tracking
 const referralEarningSchema = new mongoose.Schema({
     fromUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     fromUserEmail: { type: String, required: true },
@@ -57,7 +53,6 @@ const referralEarningSchema = new mongoose.Schema({
     status: { type: String, enum: ['pending', 'paid'], default: 'paid' }
 }, { _id: true });
 
-// Main user schema
 const userSchema = new mongoose.Schema({
     email: { 
         type: String, 
@@ -91,11 +86,9 @@ const userSchema = new mongoose.Schema({
     updatedAt: { type: Date, default: Date.now }
 });
 
-// Update the updatedAt field before saving
 userSchema.pre('save', function(next) {
     this.updatedAt = Date.now();
     
-    // Generate referral code if not exists
     if (!this.referralCode) {
         this.referralCode = `${this.email.split('@')[0]}_${this._id.toString().slice(-6)}`.toUpperCase();
     }
@@ -103,14 +96,13 @@ userSchema.pre('save', function(next) {
     next();
 });
 
-// Commission rates by plan (static reference)
 userSchema.statics.COMMISSION_RATES = {
-    bronze: 5,    // 5% commission
-    silver: 7,    // 7% commission  
-    gold: 10,     // 10% commission
-    platinum: 12, // 12% commission
-    diamond: 15,  // 15% commission
-    elite: 20     // 20% commission
+    bronze: 5,
+    silver: 7,  
+    gold: 10,
+    platinum: 12,
+    diamond: 15,
+    elite: 20
 };
 
 module.exports = mongoose.model("User", userSchema);

@@ -4,14 +4,12 @@ const config = require('config');
 const User = require('../models/user.model');
 const fs = require('fs');
 
-// Unified Login for both User and Admin
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    console.log('Login attempt for:', email); // Debug log
+    console.log('Login attempt for:', email);
 
-    // Validation
     if (!email || !password) {
       return res.status(400).json({
         meta: {
@@ -22,12 +20,10 @@ exports.login = async (req, res) => {
       });
     }
 
-    // Check if it's admin credentials first
     const adminEmail = process.env.ADMIN_EMAIL || 'admin@seashell.com';
     const adminPassword = process.env.ADMIN_PASSWORD || 'admin123';
 
     if (email.toLowerCase() === adminEmail.toLowerCase() && password === adminPassword) {
-      // Admin Login
       console.log('Admin login successful');
       const adminToken = jwt.sign(
         { adminId: 'admin', role: 'admin', email: adminEmail },
@@ -53,7 +49,6 @@ exports.login = async (req, res) => {
       });
     }
 
-    // Regular User Login
     console.log('Checking for regular user:', email);
     const user = await User.findOne({ email });
     if (!user) {
@@ -69,7 +64,6 @@ exports.login = async (req, res) => {
 
     console.log('User found:', { email: user.email, status: user.verificationStatus });
 
-    // Check password for regular user
     const isPasswordMatch = await bcrypt.compare(password, user.password);
     if (!isPasswordMatch) {
       console.log('Password mismatch for user:', email);
@@ -82,7 +76,6 @@ exports.login = async (req, res) => {
       });
     }
 
-    // UPDATED: Allow login even if not approved, but show status message
     let statusMessage = "Login successful.";
     if (user.verificationStatus === 'pending') {
       statusMessage = "Login successful. Your account is pending admin approval.";
@@ -98,7 +91,6 @@ exports.login = async (req, res) => {
       statusMessage = "Login successful. Welcome back!";
     }
 
-    // Generate JWT token for regular user
     const token = jwt.sign(
       { userId: user._id, role: 'user' },
       config.get("jwtSecret"),
@@ -140,14 +132,11 @@ exports.login = async (req, res) => {
   }
 };
 
-// User Signup with Screenshot (Keep existing code)
 exports.signup = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Validation
     if (!email || !password) {
-      // Clean up uploaded file if validation fails
       if (req.file?.path && !req.file?.location) fs.unlinkSync(req.file.path);
       return res.status(400).json({
         meta: {
@@ -169,7 +158,6 @@ exports.signup = async (req, res) => {
       });
     }
 
-    // Validate screenshot if provided
     if (req.file && !req.file.mimetype.startsWith('image/')) {
       if (req.file.path && !req.file.location) fs.unlinkSync(req.file.path);
       return res.status(400).json({
@@ -181,7 +169,6 @@ exports.signup = async (req, res) => {
       });
     }
 
-    // Check if user already exists
     const existingUser = await User.findOne({ email });
     if (existingUser) {
       if (req.file?.path && !req.file?.location) fs.unlinkSync(req.file.path);
@@ -194,9 +181,8 @@ exports.signup = async (req, res) => {
       });
     }
 
-    // Validate selected plan
     const { selectedPlan } = req.body;
-    console.log('Selected Plan from request:', selectedPlan); // Debug log
+    console.log('Selected Plan from request:', selectedPlan);
     
     if (!selectedPlan) {
       if (req.file?.path && !req.file?.location) fs.unlinkSync(req.file.path);
@@ -221,10 +207,8 @@ exports.signup = async (req, res) => {
       });
     }
 
-    // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Plan data mapping
     const planDataMap = {
       bronze: { investmentAmount: "$100", dailyReturn: "$1.00", weeklyIncome: "$5.00", monthlyIncome: "$14.29", duration: "3.57" },
       silver: { investmentAmount: "$200", dailyReturn: "$2.00", weeklyIncome: "$10.00", monthlyIncome: "$14.29", duration: "3.57" },
@@ -235,9 +219,8 @@ exports.signup = async (req, res) => {
     };
 
     const planData = planDataMap[selectedPlan.toLowerCase()];
-    console.log('Plan Data:', planData); // Debug log
+    console.log('Plan Data:', planData);
 
-    // Prepare screenshot data if uploaded
     let screenshotData = null;
     if (req.file) {
       const isS3Upload = !!req.file.location;
@@ -258,7 +241,6 @@ exports.signup = async (req, res) => {
       };
     }
 
-    // Create new user with plan
     const newUser = new User({
       email,
       password: hashedPassword,
@@ -270,19 +252,18 @@ exports.signup = async (req, res) => {
         weeklyIncome: planData.weeklyIncome,
         monthlyIncome: planData.monthlyIncome,
         duration: planData.duration,
-        isActive: false, // Set to false initially - only activate when admin approves
-        startDate: null, // Will be set when admin approves
+        isActive: false,
+        startDate: null,
         totalEarned: 0
       },
-      verificationStatus: 'pending', // Explicitly set to pending
+      verificationStatus: 'pending',
       isVerified: false
     });
 
-    console.log('User object before save:', JSON.stringify(newUser, null, 2)); // Debug log
+    console.log('User object before save:', JSON.stringify(newUser, null, 2));
 
     await newUser.save();
 
-    // Generate JWT token
     const token = jwt.sign(
       { userId: newUser._id },
       config.get("jwtSecret"),
@@ -308,7 +289,6 @@ exports.signup = async (req, res) => {
 
   } catch (error) {
     console.error("Error during signup:", error);
-    // Clean up uploaded file on error
     if (req.file?.path && !req.file?.location) fs.unlinkSync(req.file.path);
     return res.status(500).json({
       meta: {
@@ -320,7 +300,6 @@ exports.signup = async (req, res) => {
   }
 };
 
-// Test API to check user plan
 exports.getUserPlan = async (req, res) => {
   try {
     const { userId } = req.params;

@@ -2,12 +2,10 @@ const express = require("express");
 const router = express.Router();
 const adminController = require('../controllers/admin.controller');
 const withdrawalController = require('../controllers/withdrawal.controller');
-const adminAuth = require('../middlewares/adminAuth.middleware'); // Add this middleware
+const adminAuth = require('../middlewares/adminAuth.middleware');
 
-// Admin authentication (No middleware needed for login)
 router.post("/login", adminController.adminLogin);
 
-// Protected admin routes (All these need authentication)
 router.get("/pending-users", adminAuth, adminController.getPendingUsers);
 router.post("/update-user-status", adminAuth, adminController.updateUserStatus);
 router.get("/withdrawal-requests", adminAuth, adminController.getWithdrawalRequests);

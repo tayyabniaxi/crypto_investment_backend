@@ -3,12 +3,10 @@ const jwt = require('jsonwebtoken');
 const config = require('config');
 const User = require('../models/user.model');
 
-// Admin login
 exports.adminLogin = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // Admin credentials check (you can move this to database later)
     const adminEmail = process.env.ADMIN_EMAIL || 'admin@seashell.com';
     const adminPassword = process.env.ADMIN_PASSWORD || 'admin12@';
 
@@ -18,7 +16,6 @@ exports.adminLogin = async (req, res) => {
       });
     }
 
-    // Generate admin token
     const token = jwt.sign(
       { adminId: 'admin', role: 'admin' },
       config.get("jwtSecret"),
@@ -74,7 +71,6 @@ exports.getPendingUsers = async (req, res) => {
   }
 };
 
-// Approve or reject user registration
 exports.updateUserStatus = async (req, res) => {
   try {
     const { userId, status, adminNotes } = req.body;
@@ -102,21 +98,27 @@ exports.updateUserStatus = async (req, res) => {
       user.verificationStatus = 'approved';
       user.isVerified = true;
       
-      // Activate user's plan
       if (user.selectedPlan) {
         user.selectedPlan.isActive = true;
         user.selectedPlan.startDate = new Date();
+        
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        user.selectedPlan.lastProfitDate = yesterday;
+        
+        console.log(`✅ User ${user.email} approved with ${user.selectedPlan.planName} plan`);
+        console.log(`💰 Daily profit (${user.selectedPlan.dailyReturn}) will start from next cron job`);
       }
       
       await user.save();
 
       return res.status(200).json({
-        meta: { statusCode: 200, status: true, message: "User approved successfully" },
-        data: { userId, status: 'approved', email: user.email }
+        meta: { statusCode: 200, status: true, message: "User approved successfully. Daily profits will start automatically." },
+        data: { userId, status: 'approved', email: user.email, plan: user.selectedPlan?.planName }
       });
 
     } else if (status === 'rejected') {
-      // Delete user account
+      console.log(`❌ User ${user.email} rejected and account will be deleted`);
       await User.findByIdAndDelete(userId);
 
       return res.status(200).json({
@@ -133,7 +135,6 @@ exports.updateUserStatus = async (req, res) => {
   }
 };
 
-// Get all withdrawal requests
 exports.getWithdrawalRequests = async (req, res) => {
   try {
     const users = await User.find(
@@ -166,7 +167,6 @@ exports.getWithdrawalRequests = async (req, res) => {
       }
     });
 
-    // Sort by request date (newest first)
     allWithdrawals.sort((a, b) => new Date(b.requestedAt) - new Date(a.requestedAt));
 
     return res.status(200).json({
@@ -182,7 +182,6 @@ exports.getWithdrawalRequests = async (req, res) => {
   }
 };
 
-// Get dashboard stats for admin
 exports.getAdminStats = async (req, res) => {
   try {
     const totalUsers = await User.countDocuments();
@@ -190,13 +189,21 @@ exports.getAdminStats = async (req, res) => {
     const approvedUsers = await User.countDocuments({ verificationStatus: 'approved' });
     const activeInvestments = await User.countDocuments({ 'selectedPlan.isActive': true });
 
-    // Get total withdrawal amounts by status
-    const users = await User.find({}, { withdrawalHistory: 1 });
+    const users = await User.find({}, { withdrawalHistory: 1, totalBalance: 1, selectedPlan: 1, totalReferralEarnings: 1 });
     let totalPendingWithdrawals = 0;
     let totalCompletedWithdrawals = 0;
     let pendingWithdrawalCount = 0;
+    let totalInvestmentEarnings = 0;
+    let totalReferralEarnings = 0;
+    let totalAvailableBalance = 0;
 
     users.forEach(user => {
+      if (user.selectedPlan) {
+        totalInvestmentEarnings += user.selectedPlan.totalEarned || 0;
+      }
+      totalReferralEarnings += user.totalReferralEarnings || 0;
+      totalAvailableBalance += user.totalBalance || 0;
+
       if (user.withdrawalHistory) {
         user.withdrawalHistory.forEach(withdrawal => {
           if (withdrawal.status === 'pending') {
@@ -218,7 +225,10 @@ exports.getAdminStats = async (req, res) => {
         activeInvestments,
         totalPendingWithdrawals: `$${totalPendingWithdrawals.toFixed(2)}`,
         totalCompletedWithdrawals: `$${totalCompletedWithdrawals.toFixed(2)}`,
-        pendingWithdrawalCount
+        pendingWithdrawalCount,
+        totalInvestmentEarnings: `$${totalInvestmentEarnings.toFixed(2)}`,
+        totalReferralEarnings: `$${totalReferralEarnings.toFixed(2)}`,
+        totalAvailableBalance: `$${totalAvailableBalance.toFixed(2)}`
       }
     });
 

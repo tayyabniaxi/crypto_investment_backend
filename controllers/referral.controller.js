@@ -1,6 +1,5 @@
 const User = require('../models/user.model');
 
-// Generate referral code - only for approved users
 exports.generateReferralCode = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -12,7 +11,6 @@ exports.generateReferralCode = async (req, res) => {
       });
     }
 
-    // Check if user is approved
     if (user.verificationStatus !== 'approved') {
       return res.status(403).json({
         meta: { 
@@ -23,7 +21,6 @@ exports.generateReferralCode = async (req, res) => {
       });
     }
 
-    // Generate referral code if not exists
     if (!user.referralCode) {
       const generatedCode = `${user.email.split('@')[0]}_${user._id.toString().slice(-6)}`.toUpperCase();
       user.referralCode = generatedCode;
@@ -48,7 +45,6 @@ exports.generateReferralCode = async (req, res) => {
   }
 };
 
-// Get referral stats - only for approved users
 exports.getReferralStats = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -60,7 +56,6 @@ exports.getReferralStats = async (req, res) => {
       });
     }
 
-    // Check if user is approved
     if (user.verificationStatus !== 'approved') {
       return res.status(403).json({
         meta: { 
@@ -71,14 +66,12 @@ exports.getReferralStats = async (req, res) => {
       });
     }
 
-    // Generate referral code if not exists
     if (!user.referralCode) {
       const generatedCode = `${user.email.split('@')[0]}_${user._id.toString().slice(-6)}`.toUpperCase();
       user.referralCode = generatedCode;
       await user.save();
     }
 
-    // Count referrals
     const totalReferrals = await User.countDocuments({ referredBy: user.referralCode });
     const activeReferrals = await User.countDocuments({ 
       referredBy: user.referralCode,
@@ -106,7 +99,6 @@ exports.getReferralStats = async (req, res) => {
   }
 };
 
-// Get referred users list - only for approved users
 exports.getReferredUsers = async (req, res) => {
   try {
     const { userId } = req.params;
@@ -118,7 +110,6 @@ exports.getReferredUsers = async (req, res) => {
       });
     }
 
-    // Check if user is approved
     if (user.verificationStatus !== 'approved') {
       return res.status(403).json({
         meta: { 
@@ -136,7 +127,6 @@ exports.getReferredUsers = async (req, res) => {
       });
     }
 
-    // Get referred users
     const referredUsers = await User.find(
       { referredBy: user.referralCode },
       { email: 1, createdAt: 1, verificationStatus: 1, selectedPlan: 1 }

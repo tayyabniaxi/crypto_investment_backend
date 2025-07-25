@@ -1,17 +1,58 @@
 const User = require('../models/user.model');
 const mongoose = require('mongoose');
 
-// Commission rates by plan
 const COMMISSION_RATES = {
-    bronze: 5,    // 5% commission
-    silver: 7,    // 7% commission  
-    gold: 10,     // 10% commission
-    platinum: 12, // 12% commission
-    diamond: 15,  // 15% commission
-    elite: 20     // 20% commission
+    bronze: 5,
+    silver: 7, 
+    gold: 10,
+    platinum: 12,
+    diamond: 15,
+    elite: 20
 };
 
-// Calculate daily profit for a user and give referral commission
+const handleReferralCommission = async (referredUser, profitAmount) => {
+    try {
+        const referrer = await User.findOne({ referralCode: referredUser.referredBy });
+        
+        if (!referrer) {
+            console.log('Referrer not found for code:', referredUser.referredBy);
+            return;
+        }
+
+        const userPlan = referredUser.selectedPlan.planName.toLowerCase();
+        const commissionRate = COMMISSION_RATES[userPlan] || 5;
+        
+        const commissionAmount = (profitAmount * commissionRate) / 100;
+
+        const commissionRecord = {
+            fromUserId: referredUser._id,
+            fromUserEmail: referredUser.email,
+            fromUserPlan: userPlan,
+            commissionAmount: commissionAmount,
+            commissionPercentage: commissionRate,
+            originalProfitAmount: profitAmount,
+            earnedAt: new Date(),
+            status: 'paid'
+        };
+
+        if (!referrer.referralEarnings) {
+            referrer.referralEarnings = [];
+        }
+
+        referrer.referralEarnings.push(commissionRecord);
+        referrer.totalReferralEarnings = (referrer.totalReferralEarnings || 0) + commissionAmount;
+        
+        referrer.totalBalance = (referrer.totalBalance || 0) + commissionAmount;
+
+        await referrer.save();
+
+        console.log(`💰 Commission paid: $${commissionAmount.toFixed(2)} to ${referrer.email} from ${referredUser.email}`);
+
+    } catch (error) {
+        console.error('Error handling referral commission:', error);
+    }
+};
+
 exports.calculateDailyProfit = async (req, res) => {
     try {
         const { userId } = req.body;
@@ -29,14 +70,12 @@ exports.calculateDailyProfit = async (req, res) => {
             });
         }
 
-        // Check if user has active plan and is verified
         if (!user.selectedPlan || !user.selectedPlan.isActive || !user.isVerified || user.verificationStatus !== 'approved') {
             return res.status(400).json({
                 meta: { statusCode: 400, status: false, message: "No active investment plan found or user not verified" }
             });
         }
 
-        // Check if profit already added today
         const today = new Date();
         const todayStart = new Date(today.setHours(0, 0, 0, 0));
         const lastProfitDate = user.selectedPlan.lastProfitDate;
@@ -47,7 +86,6 @@ exports.calculateDailyProfit = async (req, res) => {
             });
         }
 
-        // Calculate daily profit (remove $ and convert to number)
         const dailyReturnStr = user.selectedPlan.dailyReturn.replace('$', '');
         const dailyProfit = parseFloat(dailyReturnStr);
 
@@ -57,11 +95,10 @@ exports.calculateDailyProfit = async (req, res) => {
             });
         }
 
-        // Add profit to user
         user.selectedPlan.totalEarned += dailyProfit;
         user.selectedPlan.lastProfitDate = new Date();
+        user.totalBalance = (user.totalBalance || 0) + dailyProfit;
 
-        // Handle referral commission if user was referred
         if (user.referredBy) {
             await handleReferralCommission(user, dailyProfit);
         }
@@ -74,6 +111,7 @@ exports.calculateDailyProfit = async (req, res) => {
                 userId: user._id,
                 dailyProfit: `$${dailyProfit.toFixed(2)}`,
                 totalEarned: `$${user.selectedPlan.totalEarned.toFixed(2)}`,
+                totalBalance: `$${user.totalBalance.toFixed(2)}`,
                 lastProfitDate: user.selectedPlan.lastProfitDate
             }
         });
@@ -86,57 +124,10 @@ exports.calculateDailyProfit = async (req, res) => {
     }
 };
 
-// Handle referral commission
-const handleReferralCommission = async (referredUser, profitAmount) => {
-    try {
-        // Find the referrer
-        const referrer = await User.findOne({ referralCode: referredUser.referredBy });
-        
-        if (!referrer) {
-            console.log('Referrer not found for code:', referredUser.referredBy);
-            return;
-        }
-
-        // Get commission rate based on referred user's plan
-        const userPlan = referredUser.selectedPlan.planName.toLowerCase();
-        const commissionRate = COMMISSION_RATES[userPlan] || 5; // Default 5%
-        
-        // Calculate commission
-        const commissionAmount = (profitAmount * commissionRate) / 100;
-
-        // Add commission to referrer's earnings
-        const commissionRecord = {
-            fromUserId: referredUser._id,
-            fromUserEmail: referredUser.email,
-            fromUserPlan: userPlan,
-            commissionAmount: commissionAmount,
-            commissionPercentage: commissionRate,
-            originalProfitAmount: profitAmount,
-            earnedAt: new Date(),
-            status: 'paid'
-        };
-
-        // Initialize referralEarnings if doesn't exist
-        if (!referrer.referralEarnings) {
-            referrer.referralEarnings = [];
-        }
-
-        referrer.referralEarnings.push(commissionRecord);
-        referrer.totalReferralEarnings = (referrer.totalReferralEarnings || 0) + commissionAmount;
-
-        await referrer.save();
-
-        console.log(`Commission paid: $${commissionAmount.toFixed(2)} to ${referrer.email} from ${referredUser.email}`);
-
-    } catch (error) {
-        console.error('Error handling referral commission:', error);
-    }
-};
-
-// Get all users due for daily profit (for cron job)
 exports.processAllDailyProfits = async (req, res) => {
     try {
-        // Find all users with active plans who haven't received today's profit
+        console.log('🚀 Starting daily profit calculation for all users...');
+
         const today = new Date();
         const todayStart = new Date(today.setHours(0, 0, 0, 0));
 
@@ -150,32 +141,43 @@ exports.processAllDailyProfits = async (req, res) => {
             ]
         });
 
+        console.log(`📊 Found ${users.length} users eligible for daily profit`);
+
         let processed = 0;
         let errors = 0;
+        let totalProfitDistributed = 0;
 
         for (const user of users) {
             try {
-                // Calculate daily profit for each user
                 const dailyReturnStr = user.selectedPlan.dailyReturn.replace('$', '');
                 const dailyProfit = parseFloat(dailyReturnStr);
 
-                if (!isNaN(dailyProfit)) {
+                if (!isNaN(dailyProfit) && dailyProfit > 0) {
                     user.selectedPlan.totalEarned += dailyProfit;
                     user.selectedPlan.lastProfitDate = new Date();
+                    user.totalBalance = (user.totalBalance || 0) + dailyProfit;
 
-                    // Handle referral commission
+                    totalProfitDistributed += dailyProfit;
+
                     if (user.referredBy) {
                         await handleReferralCommission(user, dailyProfit);
                     }
 
                     await user.save();
                     processed++;
+                    
+                    console.log(`✅ ${user.email}: +$${dailyProfit.toFixed(2)} (Plan: ${user.selectedPlan.planName}, Balance: $${user.totalBalance.toFixed(2)})`);
+                } else {
+                    console.log(`⚠️ Invalid daily profit amount for ${user.email}: ${user.selectedPlan.dailyReturn}`);
                 }
             } catch (userError) {
-                console.error(`Error processing user ${user._id}:`, userError);
+                console.error(`❌ Error processing user ${user.email}:`, userError);
                 errors++;
             }
         }
+
+        console.log(`🎉 Daily profit calculation completed! Processed: ${processed} users, Errors: ${errors}`);
+        console.log(`💰 Total profit distributed: $${totalProfitDistributed.toFixed(2)}`);
 
         return res.status(200).json({
             meta: { statusCode: 200, status: true, message: "Daily profits processed successfully" },
@@ -183,6 +185,7 @@ exports.processAllDailyProfits = async (req, res) => {
                 totalUsers: users.length,
                 processed: processed,
                 errors: errors,
+                totalProfitDistributed: `$${totalProfitDistributed.toFixed(2)}`,
                 processedAt: new Date()
             }
         });
@@ -195,7 +198,6 @@ exports.processAllDailyProfits = async (req, res) => {
     }
 };
 
-// Get referral commission history
 exports.getReferralCommissions = async (req, res) => {
     try {
         const { userId } = req.params;

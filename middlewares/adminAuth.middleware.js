@@ -17,7 +17,6 @@ const adminAuth = (req, res, next) => {
 
     const decoded = jwt.verify(token, config.get("jwtSecret"));
     
-    // Check if it's an admin token
     if (!decoded.adminId || decoded.role !== 'admin') {
       return res.status(403).json({
         meta: {
