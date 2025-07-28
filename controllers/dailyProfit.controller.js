@@ -42,7 +42,10 @@ const handleReferralCommission = async (referredUser, profitAmount) => {
         referrer.referralEarnings.push(commissionRecord);
         referrer.totalReferralEarnings = (referrer.totalReferralEarnings || 0) + commissionAmount;
         
-        referrer.totalBalance = (referrer.totalBalance || 0) + commissionAmount;
+        // Update totalBalance to include new referral commission
+        const investmentEarnings = referrer.selectedPlan?.totalEarned || 0;
+        const referralEarnings = referrer.totalReferralEarnings;
+        referrer.totalBalance = investmentEarnings + referralEarnings;
 
         await referrer.save();
 
@@ -97,7 +100,11 @@ exports.calculateDailyProfit = async (req, res) => {
 
         user.selectedPlan.totalEarned += dailyProfit;
         user.selectedPlan.lastProfitDate = new Date();
-        user.totalBalance = (user.totalBalance || 0) + dailyProfit;
+        
+        // Update totalBalance to include new investment earnings
+        const investmentEarnings = user.selectedPlan.totalEarned;
+        const referralEarnings = user.totalReferralEarnings || 0;
+        user.totalBalance = investmentEarnings + referralEarnings;
 
         if (user.referredBy) {
             await handleReferralCommission(user, dailyProfit);
@@ -155,7 +162,11 @@ exports.processAllDailyProfits = async (req, res) => {
                 if (!isNaN(dailyProfit) && dailyProfit > 0) {
                     user.selectedPlan.totalEarned += dailyProfit;
                     user.selectedPlan.lastProfitDate = new Date();
-                    user.totalBalance = (user.totalBalance || 0) + dailyProfit;
+                    
+                    // Update totalBalance to include new investment earnings
+                    const investmentEarnings = user.selectedPlan.totalEarned;
+                    const referralEarnings = user.totalReferralEarnings || 0;
+                    user.totalBalance = investmentEarnings + referralEarnings;
 
                     totalProfitDistributed += dailyProfit;
 
@@ -221,10 +232,11 @@ exports.getReferralCommissions = async (req, res) => {
             fromUser: commission.fromUserEmail,
             plan: commission.fromUserPlan,
             originalProfit: `$${commission.originalProfitAmount.toFixed(2)}`,
-            commissionRate: `${commission.commissionPercentage}%`,
+            commissionRate: commission.commissionPercentage === 0 ? 'Signup Bonus' : `${commission.commissionPercentage}%`,
             commissionAmount: `$${commission.commissionAmount.toFixed(2)}`,
             earnedAt: new Date(commission.earnedAt).toLocaleDateString(),
-            status: commission.status
+            status: commission.status,
+            type: commission.commissionPercentage === 0 ? 'Signup Bonus' : 'Daily Commission'
         }));
 
         return res.status(200).json({

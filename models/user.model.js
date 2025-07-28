@@ -69,7 +69,7 @@ const userSchema = new mongoose.Schema({
     profileImage: profileImageSchema,
     selectedPlan: investmentPlanSchema,
     withdrawalHistory: [withdrawalSchema],
-    referralEarnings: [referralEarningSchema],
+    referralEarnings: { type: [referralEarningSchema], default: [] },
     totalReferralEarnings: { type: Number, default: 0 },
     isVerified: { type: Boolean, default: false },
     verificationStatus: {
@@ -86,14 +86,40 @@ const userSchema = new mongoose.Schema({
     updatedAt: { type: Date, default: Date.now }
 });
 
+// Pre-save middleware to generate referral code
 userSchema.pre('save', function(next) {
     this.updatedAt = Date.now();
     
-    if (!this.referralCode) {
-        this.referralCode = `${this.email.split('@')[0]}_${this._id.toString().slice(-6)}`.toUpperCase();
+    // Generate referral code if it doesn't exist
+    if (!this.referralCode && this._id) {
+        const emailPart = this.email.split('@')[0].replace(/[^a-zA-Z0-9]/g, '');
+        const idPart = this._id.toString().slice(-6);
+        this.referralCode = `${emailPart}_${idPart}`.toUpperCase();
+        console.log(`Generated referral code for ${this.email}: ${this.referralCode}`);
     }
     
     next();
+});
+
+// Post-save middleware to generate referral code if it wasn't created in pre-save
+userSchema.post('save', async function(doc) {
+    if (!doc.referralCode && doc._id) {
+        try {
+            const emailPart = doc.email.split('@')[0].replace(/[^a-zA-Z0-9]/g, '');
+            const idPart = doc._id.toString().slice(-6);
+            doc.referralCode = `${emailPart}_${idPart}`.toUpperCase();
+            
+            // Update without triggering middleware again
+            await mongoose.model('User').updateOne(
+                { _id: doc._id },
+                { referralCode: doc.referralCode }
+            );
+            
+            console.log(`Post-save generated referral code for ${doc.email}: ${doc.referralCode}`);
+        } catch (error) {
+            console.error('Error generating referral code in post-save:', error);
+        }
+    }
 });
 
 userSchema.statics.COMMISSION_RATES = {

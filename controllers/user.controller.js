@@ -134,7 +134,9 @@ exports.login = async (req, res) => {
 
 exports.signup = async (req, res) => {
   try {
-    const { email, password } = req.body;
+    const { email, password, referralCode } = req.body;
+
+    console.log('Signup attempt:', { email, referralCode });
 
     if (!email || !password) {
       if (req.file?.path && !req.file?.location) fs.unlinkSync(req.file.path);
@@ -207,6 +209,23 @@ exports.signup = async (req, res) => {
       });
     }
 
+    // Check if referral code is valid and find the referrer
+    let referrerUser = null;
+    if (referralCode && referralCode.trim()) {
+      console.log('Looking for referrer with code:', referralCode.trim().toUpperCase());
+      
+      referrerUser = await User.findOne({ 
+        referralCode: referralCode.trim().toUpperCase() 
+      });
+      
+      if (!referrerUser) {
+        console.log('❌ Invalid referral code provided:', referralCode);
+        // Don't block signup for invalid referral code, just log it
+      } else {
+        console.log('✅ Valid referral code found, referrer:', referrerUser.email);
+      }
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const planDataMap = {
@@ -257,12 +276,29 @@ exports.signup = async (req, res) => {
         totalEarned: 0
       },
       verificationStatus: 'pending',
-      isVerified: false
+      isVerified: false,
+      referredBy: referrerUser ? referrerUser.referralCode : null,
+      // Initialize these fields to avoid undefined issues
+      referralEarnings: [],
+      totalReferralEarnings: 0,
+      totalBalance: 0
     });
 
-    console.log('User object before save:', JSON.stringify(newUser, null, 2));
+    console.log('User object before save:', {
+      email: newUser.email,
+      referredBy: newUser.referredBy,
+      selectedPlan: newUser.selectedPlan.planName
+    });
 
+    // Save the new user first
     await newUser.save();
+    console.log('✅ New user saved successfully');
+
+    // NOTE: Referral bonus will be awarded when admin approves the account
+    if (referrerUser) {
+      console.log(`📝 Referral relationship established: ${newUser.email} referred by ${referrerUser.email}`);
+      console.log(`⏳ $3 bonus will be awarded to ${referrerUser.email} when ${newUser.email} gets approved by admin`);
+    }
 
     const token = jwt.sign(
       { userId: newUser._id },
@@ -270,11 +306,17 @@ exports.signup = async (req, res) => {
       { expiresIn: config.has("TokenExpire") ? config.get("TokenExpire") : "1h" }
     );
 
+    const successMessage = referrerUser ? 
+      `User registered successfully with plan. Referral bonus will be awarded when account is approved!` : 
+      "User registered successfully with plan.";
+
+    console.log('✅ Signup completed:', successMessage);
+
     return res.status(201).json({
       meta: {
         statusCode: 201,
         status: true,
-        message: "User registered successfully with plan."
+        message: successMessage
       },
       data: {
         token,
@@ -288,7 +330,7 @@ exports.signup = async (req, res) => {
     });
 
   } catch (error) {
-    console.error("Error during signup:", error);
+    console.error("❌ Error during signup:", error);
     if (req.file?.path && !req.file?.location) fs.unlinkSync(req.file.path);
     return res.status(500).json({
       meta: {

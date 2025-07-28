@@ -34,6 +34,7 @@ exports.requestWithdrawal = async (req, res) => {
       });
     }
 
+    // Calculate available balance
     const totalEarned = (user.selectedPlan?.totalEarned || 0) + (user.totalReferralEarnings || 0);
     const totalWithdrawn = user.totalWithdrawn || 0;
     const availableBalance = totalEarned - totalWithdrawn;
@@ -57,16 +58,26 @@ exports.requestWithdrawal = async (req, res) => {
     }
     user.withdrawalHistory.push(withdrawalData);
 
+    // IMPORTANT: Deduct amount from totalBalance immediately when request is made
+    user.totalBalance = (user.totalBalance || 0) - parseFloat(amount);
+    
+    // Also update totalWithdrawn to reflect the pending withdrawal
+    user.totalWithdrawn = (user.totalWithdrawn || 0) + parseFloat(amount);
+
     user.binanceWallet = binanceWallet.trim();
 
     await user.save();
 
+    console.log(`💸 Withdrawal requested: $${amount} deducted from ${user.email}'s balance immediately`);
+    console.log(`📊 New balance: $${user.totalBalance.toFixed(2)}`);
+
     return res.status(201).json({
-      meta: { statusCode: 201, status: true, message: "Withdrawal request submitted successfully" },
+      meta: { statusCode: 201, status: true, message: "Withdrawal request submitted successfully. Amount deducted from balance." },
       data: {
         withdrawalId: withdrawalData.withdrawalId,
-        amount: `${amount}`,
-        status: 'pending'
+        amount: `$${amount}`,
+        status: 'pending',
+        newBalance: `$${user.totalBalance.toFixed(2)}`
       }
     });
 
@@ -117,6 +128,7 @@ exports.getWithdrawalStats = async (req, res) => {
     const user = await User.findById(userId, {
       selectedPlan: 1,
       totalReferralEarnings: 1,
+      totalBalance: 1,
       totalWithdrawn: 1,
       withdrawalHistory: 1,
       verificationStatus: 1
@@ -140,20 +152,15 @@ exports.getWithdrawalStats = async (req, res) => {
       });
     }
 
-    const investmentEarnings = user.selectedPlan?.totalEarned || 0;
-    const referralEarnings = user.totalReferralEarnings || 0;
-    const totalEarned = investmentEarnings + referralEarnings;
-
-    const totalWithdrawnFromHistory = (user.withdrawalHistory || [])
-      .filter(w => w.status === 'completed')
-      .reduce((sum, w) => sum + w.amount, 0);
-
-    const availableBalance = totalEarned - totalWithdrawnFromHistory;
+    // Use totalBalance for available balance (already deducted pending withdrawals)
+    const totalEarned = (user.selectedPlan?.totalEarned || 0) + (user.totalReferralEarnings || 0);
+    const totalWithdrawn = user.totalWithdrawn || 0;
+    const availableBalance = user.totalBalance || 0; // This reflects real available balance
 
     const stats = {
-      totalEarned: `${totalEarned.toFixed(2)}`,
-      totalWithdrawn: `${totalWithdrawnFromHistory.toFixed(2)}`,
-      availableBalance: `${Math.max(0, availableBalance).toFixed(2)}`
+      totalEarned: `$${totalEarned.toFixed(2)}`,
+      totalWithdrawn: `$${totalWithdrawn.toFixed(2)}`,
+      availableBalance: `$${Math.max(0, availableBalance).toFixed(2)}`
     };
 
     return res.status(200).json({
@@ -199,25 +206,40 @@ exports.updateWithdrawalStatus = async (req, res) => {
       });
     }
 
+    const oldStatus = withdrawal.status;
     withdrawal.status = status;
     withdrawal.processedAt = new Date();
     if (adminNotes) {
       withdrawal.adminNotes = adminNotes;
     }
 
-    if (status === 'completed') {
-      user.totalWithdrawn = (user.totalWithdrawn || 0) + withdrawal.amount;
+    // Handle status changes
+    if (status === 'rejected' && oldStatus === 'pending') {
+      // If rejected, return the money back to user's balance
+      user.totalBalance = (user.totalBalance || 0) + withdrawal.amount;
+      user.totalWithdrawn = (user.totalWithdrawn || 0) - withdrawal.amount;
+      
+      console.log(`🔄 Withdrawal rejected: $${withdrawal.amount} returned to ${user.email}'s balance`);
+      console.log(`📊 New balance: $${user.totalBalance.toFixed(2)}`);
     }
+    // If completed, money stays deducted (already deducted when requested)
+    // If approved, no balance change needed (money already deducted)
 
     await user.save();
 
+    let responseMessage = `Withdrawal ${status} successfully`;
+    if (status === 'rejected') {
+      responseMessage += `. Amount of $${withdrawal.amount.toFixed(2)} returned to user's balance.`;
+    }
+
     return res.status(200).json({
-      meta: { statusCode: 200, status: true, message: `Withdrawal ${status} successfully` },
+      meta: { statusCode: 200, status: true, message: responseMessage },
       data: {
         withdrawalId,
         status,
         userEmail: user.email,
-        amount: `$${withdrawal.amount.toFixed(2)}`
+        amount: `$${withdrawal.amount.toFixed(2)}`,
+        newBalance: `$${user.totalBalance.toFixed(2)}`
       }
     });
 
