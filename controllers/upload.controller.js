@@ -39,7 +39,7 @@ exports.uploadProfileImage = async (req, res) => {
 
     const isS3Upload = !!req.file.location;
     const fileUrl = isS3Upload ? req.file.location :
-      `${process.env.serverBaseUrl || 'http://localhost:5000'}/uploads/profileimages/${req.file.filename}`;
+      `${process.env.serverBaseUrl || 'http://localhost:5001'}/uploads/profileimages/${req.file.filename}`;
     const s3Key = req.file.key || req.file.filename;
     const uniqueKey = `${Date.now()}_${uuidv4()}`;
 

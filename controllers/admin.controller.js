@@ -191,6 +191,143 @@ exports.getPendingUsers = async (req, res) => {
   }
 };
 
+// NEW: Get approved users
+exports.getApprovedUsers = async (req, res) => {
+  try {
+    const approvedUsers = await User.find(
+      { verificationStatus: 'approved' },
+      {
+        email: 1,
+        selectedPlan: 1,
+        createdAt: 1,
+        verificationStatus: 1,
+        referredBy: 1,
+        totalBalance: 1,
+        totalReferralEarnings: 1,
+        isVerified: 1
+      }
+    ).sort({ createdAt: -1 });
+
+    const formattedUsers = approvedUsers.map(user => ({
+      id: user._id,
+      email: user.email,
+      plan: user.selectedPlan?.planName || 'No Plan',
+      investmentAmount: user.selectedPlan?.investmentAmount || '$0',
+      dailyReturn: user.selectedPlan?.dailyReturn || '$0',
+      totalEarned: `$${(user.selectedPlan?.totalEarned || 0).toFixed(2)}`,
+      totalBalance: `$${(user.totalBalance || 0).toFixed(2)}`,
+      totalReferralEarnings: `$${(user.totalReferralEarnings || 0).toFixed(2)}`,
+      planStartDate: user.selectedPlan?.startDate ? new Date(user.selectedPlan?.startDate).toLocaleDateString() : 'Not started',
+      lastProfitDate: user.selectedPlan?.lastProfitDate ? new Date(user.selectedPlan?.lastProfitDate).toLocaleDateString() : 'No profits yet',
+      registeredAt: new Date(user.createdAt).toLocaleDateString(),
+      status: user.verificationStatus,
+      referredBy: user.referredBy || null,
+      isActive: user.selectedPlan?.isActive || false
+    }));
+
+    return res.status(200).json({
+      meta: { statusCode: 200, status: true, message: "Approved users retrieved successfully" },
+      data: formattedUsers
+    });
+
+  } catch (error) {
+    return res.status(500).json({
+      meta: { statusCode: 500, status: false, message: "Server error" }
+    });
+  }
+};
+
+// NEW: Get user's daily profit history
+exports.getUserProfitHistory = async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const user = await User.findById(userId, {
+      email: 1,
+      selectedPlan: 1,
+      createdAt: 1,
+      totalBalance: 1,
+      totalReferralEarnings: 1,
+      referralEarnings: 1
+    });
+
+    if (!user) {
+      return res.status(404).json({
+        meta: { statusCode: 404, status: false, message: "User not found" }
+      });
+    }
+
+    // Calculate profit history based on plan start date and daily returns
+    const profitHistory = [];
+    
+    if (user.selectedPlan && user.selectedPlan.startDate) {
+      const startDate = new Date(user.selectedPlan.startDate);
+      const currentDate = new Date();
+      const dailyReturnAmount = parseFloat(user.selectedPlan.dailyReturn.replace('$', ''));
+      
+      // Calculate days since plan started
+      const daysDiff = Math.floor((currentDate - startDate) / (1000 * 60 * 60 * 24));
+      
+      for (let i = 0; i <= daysDiff; i++) {
+        const profitDate = new Date(startDate);
+        profitDate.setDate(startDate.getDate() + i);
+        
+        // Only add profits for past dates (not future)
+        if (profitDate <= currentDate) {
+          profitHistory.push({
+            date: profitDate.toLocaleDateString(),
+            day: i + 1,
+            profitAmount: `$${dailyReturnAmount.toFixed(2)}`,
+            cumulativeTotal: `$${((i + 1) * dailyReturnAmount).toFixed(2)}`,
+            status: 'completed'
+          });
+        }
+      }
+    }
+
+    // Format referral earnings for display
+    const referralHistory = (user.referralEarnings || []).map(earning => ({
+      date: new Date(earning.earnedAt).toLocaleDateString(),
+      fromUser: earning.fromUserEmail,
+      type: earning.commissionPercentage === 0 ? 'Signup Bonus' : 'Daily Commission',
+      amount: `$${earning.commissionAmount.toFixed(2)}`,
+      percentage: earning.commissionPercentage === 0 ? 'N/A' : `${earning.commissionPercentage}%`,
+      originalProfit: earning.commissionPercentage === 0 ? 'N/A' : `$${earning.originalProfitAmount.toFixed(2)}`,
+      status: earning.status
+    }));
+
+    const userSummary = {
+      id: user._id,
+      email: user.email,
+      plan: user.selectedPlan?.planName || 'No Plan',
+      investmentAmount: user.selectedPlan?.investmentAmount || '$0',
+      dailyReturn: user.selectedPlan?.dailyReturn || '$0',
+      planStartDate: user.selectedPlan?.startDate ? new Date(user.selectedPlan?.startDate).toLocaleDateString() : 'Not started',
+      totalInvestmentEarnings: `$${(user.selectedPlan?.totalEarned || 0).toFixed(2)}`,
+      totalReferralEarnings: `$${(user.totalReferralEarnings || 0).toFixed(2)}`,
+      totalBalance: `$${(user.totalBalance || 0).toFixed(2)}`,
+      totalDays: profitHistory.length,
+      registeredAt: new Date(user.createdAt).toLocaleDateString(),
+      isActive: user.selectedPlan?.isActive || false
+    };
+
+    return res.status(200).json({
+      meta: { statusCode: 200, status: true, message: "User profit history retrieved successfully" },
+      data: {
+        user: userSummary,
+        dailyProfits: profitHistory.reverse(), // Show latest first
+        referralEarnings: referralHistory.reverse() // Show latest first
+      }
+    });
+
+  } catch (error) {
+    console.error("Error getting user profit history:", error);
+    return res.status(500).json({
+      meta: { statusCode: 500, status: false, message: "Server error" }
+    });
+  }
+};
+
 exports.updateUserStatus = async (req, res) => {
   try {
     const { userId, status, adminNotes } = req.body;

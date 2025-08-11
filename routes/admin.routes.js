@@ -10,6 +10,11 @@ router.get("/account-number", adminController.getAccountNumber);
 router.put("/account-number", adminAuth, adminController.updateAccountNumber);
 
 router.get("/pending-users", adminAuth, adminController.getPendingUsers);
+// NEW: Get approved users
+router.get("/approved-users", adminAuth, adminController.getApprovedUsers);
+// NEW: Get user's profit history
+router.get("/user-profit-history/:userId", adminAuth, adminController.getUserProfitHistory);
+
 router.post("/update-user-status", adminAuth, adminController.updateUserStatus);
 
 router.get("/withdrawal-requests", adminAuth, adminController.getWithdrawalRequests);

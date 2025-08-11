@@ -67,7 +67,7 @@ cron.schedule('1 0 * * *', async () => {
 console.log('⏰ Daily profit cron job scheduled for 12:01 AM daily (Pakistan Time)');
 console.log('🔄 Users will receive profits automatically 24 hours after approval');
 
-const PORT = 5000;
+const PORT = process.env.PORT || 5001;
 server.listen(PORT, () => {
     console.log('\n🚀 ============ SEASHELL INVESTMENT SYSTEM ============');
     console.log(`🌟 Server started on port ${PORT}`);

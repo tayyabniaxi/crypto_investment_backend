@@ -27,7 +27,7 @@ exports.generateReferralCode = async (req, res) => {
       await user.save();
     }
 
-    const referralLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/register?ref=${user.referralCode}`;
+    const referralLink = `${user.referralCode}`;
 
     return res.status(200).json({
       meta: { statusCode: 200, status: true, message: "Referral code generated successfully" },
@@ -78,7 +78,7 @@ exports.getReferralStats = async (req, res) => {
       verificationStatus: 'approved' 
     });
 
-    const referralLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/register?ref=${user.referralCode}`;
+    const referralLink = `${user.referralCode}`;
 
     return res.status(200).json({
       meta: { statusCode: 200, status: true, message: "Referral stats retrieved successfully" },

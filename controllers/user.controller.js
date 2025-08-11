@@ -244,7 +244,7 @@ exports.signup = async (req, res) => {
     if (req.file) {
       const isS3Upload = !!req.file.location;
       const fileUrl = isS3Upload ? req.file.location :
-        `${config.get("serverBaseUrl") || 'http://localhost:5000'}/uploads/screenshots/${req.file.filename}`;
+        `${config.get("serverBaseUrl") || 'http://localhost:5001'}/uploads/screenshots/${req.file.filename}`;
       const s3Key = req.file.key || req.file.filename;
       const uniqueKey = `${Date.now()}_${require('uuid').v4()}`;
 

@@ -19,18 +19,22 @@ const handleReferralCommission = async (referredUser, profitAmount) => {
             return;
         }
 
-        const userPlan = referredUser.selectedPlan.planName.toLowerCase();
-        const commissionRate = COMMISSION_RATES[userPlan] || 5;
-        
-        const commissionAmount = (profitAmount * commissionRate) / 100;
+        // Check if referrer has an active plan
+        if (!referrer.selectedPlan || !referrer.selectedPlan.isActive || referrer.verificationStatus !== 'approved') {
+            console.log('Referrer does not have an active plan:', referrer.email);
+            return;
+        }
+
+        // FIXED: Calculate 20% of the referred user's profit (not referrer's own profit)
+        const commissionAmount = (profitAmount * 20) / 100;
 
         const commissionRecord = {
             fromUserId: referredUser._id,
             fromUserEmail: referredUser.email,
-            fromUserPlan: userPlan,
+            fromUserPlan: referredUser.selectedPlan.planName.toLowerCase(),
             commissionAmount: commissionAmount,
-            commissionPercentage: commissionRate,
-            originalProfitAmount: profitAmount,
+            commissionPercentage: 20, // 20% of referred user's profit
+            originalProfitAmount: profitAmount, // The referred user's profit amount
             earnedAt: new Date(),
             status: 'paid'
         };
@@ -49,7 +53,7 @@ const handleReferralCommission = async (referredUser, profitAmount) => {
 
         await referrer.save();
 
-        console.log(`💰 Commission paid: $${commissionAmount.toFixed(2)} to ${referrer.email} from ${referredUser.email}`);
+        console.log(`💰 Commission paid: $${commissionAmount.toFixed(2)} (20% of ${referredUser.email}'s daily profit $${profitAmount.toFixed(2)}) to ${referrer.email}`);
 
     } catch (error) {
         console.error('Error handling referral commission:', error);
@@ -106,6 +110,7 @@ exports.calculateDailyProfit = async (req, res) => {
         const referralEarnings = user.totalReferralEarnings || 0;
         user.totalBalance = investmentEarnings + referralEarnings;
 
+        // FIXED: Award referral commission (20% of THIS user's daily profit to the referrer)
         if (user.referredBy) {
             await handleReferralCommission(user, dailyProfit);
         }
@@ -153,6 +158,7 @@ exports.processAllDailyProfits = async (req, res) => {
         let processed = 0;
         let errors = 0;
         let totalProfitDistributed = 0;
+        let totalCommissionsPaid = 0;
 
         for (const user of users) {
             try {
@@ -170,8 +176,11 @@ exports.processAllDailyProfits = async (req, res) => {
 
                     totalProfitDistributed += dailyProfit;
 
+                    // FIXED: Award referral commission (20% of THIS user's daily profit to the referrer)
                     if (user.referredBy) {
+                        const commissionAmount = (dailyProfit * 20) / 100;
                         await handleReferralCommission(user, dailyProfit);
+                        totalCommissionsPaid += commissionAmount;
                     }
 
                     await user.save();
@@ -189,6 +198,7 @@ exports.processAllDailyProfits = async (req, res) => {
 
         console.log(`🎉 Daily profit calculation completed! Processed: ${processed} users, Errors: ${errors}`);
         console.log(`💰 Total profit distributed: $${totalProfitDistributed.toFixed(2)}`);
+        console.log(`🤝 Total referral commissions paid: $${totalCommissionsPaid.toFixed(2)}`);
 
         return res.status(200).json({
             meta: { statusCode: 200, status: true, message: "Daily profits processed successfully" },
@@ -197,6 +207,7 @@ exports.processAllDailyProfits = async (req, res) => {
                 processed: processed,
                 errors: errors,
                 totalProfitDistributed: `$${totalProfitDistributed.toFixed(2)}`,
+                totalCommissionsPaid: `$${totalCommissionsPaid.toFixed(2)}`,
                 processedAt: new Date()
             }
         });
@@ -231,8 +242,8 @@ exports.getReferralCommissions = async (req, res) => {
             id: commission._id,
             fromUser: commission.fromUserEmail,
             plan: commission.fromUserPlan,
-            originalProfit: `$${commission.originalProfitAmount.toFixed(2)}`,
-            commissionRate: commission.commissionPercentage === 0 ? 'Signup Bonus' : `${commission.commissionPercentage}%`,
+            referredUserProfit: `$${commission.originalProfitAmount.toFixed(2)}`, // FIXED: This is now the referred user's profit
+            commissionRate: commission.commissionPercentage === 0 ? 'Signup Bonus' : `20% of referred user's daily profit`,
             commissionAmount: `$${commission.commissionAmount.toFixed(2)}`,
             earnedAt: new Date(commission.earnedAt).toLocaleDateString(),
             status: commission.status,
