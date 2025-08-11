@@ -19,8 +19,6 @@ const investmentPlanSchema = new mongoose.Schema({
     investmentAmount: { type: String, required: true },
     dailyReturn: { type: String, required: true },
     weeklyIncome: { type: String, required: true },
-    monthlyIncome: { type: String, required: true },
-    duration: { type: String, required: true },
     isActive: { type: Boolean, default: true },
     startDate: { type: Date, default: Date.now },
     endDate: { type: Date },
