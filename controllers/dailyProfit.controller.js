@@ -9,7 +9,10 @@ const COMMISSION_RATES = {
     diamond: 15,
     elite: 20
 };
-
+const isWeekday = (date = new Date()) => {
+    const dayOfWeek = date.getDay(); // 0=Sunday, 1=Monday, ..., 6=Saturday
+    return dayOfWeek >= 1 && dayOfWeek <= 5; // Monday(1) to Friday(5)
+};
 const handleReferralCommission = async (referredUser, profitAmount) => {
     try {
         const referrer = await User.findOne({ referralCode: referredUser.referredBy });
@@ -138,9 +141,30 @@ exports.calculateDailyProfit = async (req, res) => {
 
 exports.processAllDailyProfits = async (req, res) => {
     try {
-        console.log('🚀 Starting daily profit calculation for all users...');
-
         const today = new Date();
+        
+        // ADDED: Check if today is a weekday
+        if (!isWeekday(today)) {
+            const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][today.getDay()];
+            console.log(`🛑 Weekend detected (${dayName}) - No profit distribution today`);
+            
+            return res.status(200).json({
+                meta: { statusCode: 200, status: true, message: `Weekend - No profit distribution on ${dayName}` },
+                data: {
+                    totalUsers: 0,
+                    processed: 0,
+                    errors: 0,
+                    totalProfitDistributed: "$0.00",
+                    totalCommissionsPaid: "$0.00",
+                    processedAt: new Date(),
+                    note: `Profits will resume on Monday`
+                }
+            });
+        }
+
+        console.log('🚀 Starting WEEKDAY profit calculation for all users...');
+        console.log(`📆 Today: ${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][today.getDay()]}`);
+
         const todayStart = new Date(today.setHours(0, 0, 0, 0));
 
         const users = await User.find({
@@ -153,7 +177,7 @@ exports.processAllDailyProfits = async (req, res) => {
             ]
         });
 
-        console.log(`📊 Found ${users.length} users eligible for daily profit`);
+        console.log(`📊 Found ${users.length} users eligible for weekday profit`);
 
         let processed = 0;
         let errors = 0;
@@ -162,6 +186,13 @@ exports.processAllDailyProfits = async (req, res) => {
 
         for (const user of users) {
             try {
+                // Check if user's last profit was on a weekday
+                const lastProfitDate = user.selectedPlan.lastProfitDate;
+                if (lastProfitDate && !isWeekday(lastProfitDate)) {
+                    // Skip weekend profits that might have been missed
+                    console.log(`⏭️ Skipping weekend profit for ${user.email}`);
+                }
+
                 const dailyReturnStr = user.selectedPlan.dailyReturn.replace('$', '');
                 const dailyProfit = parseFloat(dailyReturnStr);
 
@@ -176,7 +207,7 @@ exports.processAllDailyProfits = async (req, res) => {
 
                     totalProfitDistributed += dailyProfit;
 
-                    // FIXED: Award referral commission (20% of THIS user's daily profit to the referrer)
+                    // Award referral commission (20% of THIS user's daily profit to the referrer)
                     if (user.referredBy) {
                         const commissionAmount = (dailyProfit * 20) / 100;
                         await handleReferralCommission(user, dailyProfit);
@@ -196,12 +227,12 @@ exports.processAllDailyProfits = async (req, res) => {
             }
         }
 
-        console.log(`🎉 Daily profit calculation completed! Processed: ${processed} users, Errors: ${errors}`);
+        console.log(`🎉 Weekday profit calculation completed! Processed: ${processed} users, Errors: ${errors}`);
         console.log(`💰 Total profit distributed: $${totalProfitDistributed.toFixed(2)}`);
         console.log(`🤝 Total referral commissions paid: $${totalCommissionsPaid.toFixed(2)}`);
 
         return res.status(200).json({
-            meta: { statusCode: 200, status: true, message: "Daily profits processed successfully" },
+            meta: { statusCode: 200, status: true, message: "Weekday profits processed successfully" },
             data: {
                 totalUsers: users.length,
                 processed: processed,
@@ -213,7 +244,7 @@ exports.processAllDailyProfits = async (req, res) => {
         });
 
     } catch (error) {
-        console.error("Error processing daily profits:", error);
+        console.error("Error processing weekday profits:", error);
         return res.status(500).json({
             meta: { statusCode: 500, status: false, message: "Server error" }
         });
@@ -242,12 +273,16 @@ exports.getReferralCommissions = async (req, res) => {
             id: commission._id,
             fromUser: commission.fromUserEmail,
             plan: commission.fromUserPlan,
-            referredUserProfit: `$${commission.originalProfitAmount.toFixed(2)}`, // FIXED: This is now the referred user's profit
-            commissionRate: commission.commissionPercentage === 0 ? 'Signup Bonus' : `20% of referred user's daily profit`,
+            referredUserProfit: commission.commissionPercentage === 0 ? 
+                `$${commission.originalProfitAmount.toFixed(2)}` : // Investment amount for signup bonus
+                `$${commission.originalProfitAmount.toFixed(2)}`, // Daily profit for ongoing commissions
+            commissionRate: commission.commissionPercentage === 0 ? 
+                '3% of investment' : // UPDATED: Show 3% of investment for signup bonus
+                `20% of referred user's daily profit`,
             commissionAmount: `$${commission.commissionAmount.toFixed(2)}`,
             earnedAt: new Date(commission.earnedAt).toLocaleDateString(),
             status: commission.status,
-            type: commission.commissionPercentage === 0 ? 'Signup Bonus' : 'Daily Commission'
+            type: commission.commissionPercentage === 0 ? 'Signup Bonus (3% of investment)' : 'Daily Commission (20% of daily profit)'
         }));
 
         return res.status(200).json({

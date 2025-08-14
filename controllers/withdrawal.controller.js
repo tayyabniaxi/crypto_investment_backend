@@ -47,7 +47,9 @@ const canMakeWithdrawalRequest = (withdrawalHistory) => {
     return {
       canWithdraw: false,
       reason: 'not_friday',
-      message: `Withdrawals are only available on Fridays. Next withdrawal date: ${nextFriday.toDateString()}`
+      message: `WITHDRAWL ARE ONLY AVAILABLE ON FRIDAYS
+ NEXT WITHDRAWL DATE: ${nextFriday.toDateString()}
+ PAYMENT WILL BE RECEIVED IN 24 HOURS AFTER WITHDRAWL REQUEST`
     };
   }
   
@@ -67,7 +69,9 @@ const canMakeWithdrawalRequest = (withdrawalHistory) => {
       return {
         canWithdraw: false,
         reason: 'too_soon',
-        message: `You can only make withdrawal requests every 14 days. Next available date: ${nextAllowedDate.toDateString()}`,
+        message: `WITHDRAWL ARE ONLY AVAILABLE ON FRIDAYS
+ NEXT WITHDRAWL DATE: ${nextAllowedDate.toDateString()}
+ PAYMENT WILL BE RECEIVED IN 24 HOURS AFTER WITHDRAWL REQUEST`,
         daysRemaining: 14 - daysSinceLastAttempt
       };
     }
@@ -89,9 +93,10 @@ exports.requestWithdrawal = async (req, res) => {
       });
     }
 
-    if (amount < 30) {
+    // REMOVED: Minimum $30 check - now users can withdraw any available amount
+    if (amount <= 0) {
       return res.status(400).json({
-        meta: { statusCode: 400, status: false, message: "Minimum withdrawal amount is $30" }
+        meta: { statusCode: 400, status: false, message: "Amount must be greater than $0" }
       });
     }
 
@@ -126,7 +131,6 @@ exports.requestWithdrawal = async (req, res) => {
       });
     }
 
-    // REMOVED: 50% limit calculation
     // Calculate total earnings (investment + referral)
     const investmentEarnings = user.selectedPlan?.totalEarned || 0;
     const referralEarnings = user.totalReferralEarnings || 0;
@@ -135,7 +139,7 @@ exports.requestWithdrawal = async (req, res) => {
     // Calculate already withdrawn amount
     const totalWithdrawn = user.totalWithdrawn || 0;
     
-    // UPDATED: Available for withdrawal = total earnings - already withdrawn (100% available)
+    // Available for withdrawal = total earnings - already withdrawn (100% available)
     const availableForWithdrawal = Math.max(0, totalEarnings - totalWithdrawn);
 
     console.log(`💡 Withdrawal calculation for ${user.email}:`);
@@ -143,7 +147,18 @@ exports.requestWithdrawal = async (req, res) => {
     console.log(`💸 Already Withdrawn: $${totalWithdrawn.toFixed(2)}`);
     console.log(`✅ Available for Withdrawal: $${availableForWithdrawal.toFixed(2)}`);
 
-    if (availableForWithdrawal < amount) {
+    // UPDATED: Only check if amount exceeds available balance (no minimum limit)
+    if (availableForWithdrawal <= 0) {
+      return res.status(400).json({
+        meta: { 
+          statusCode: 400, 
+          status: false, 
+          message: `No funds available for withdrawal. Current balance: $${availableForWithdrawal.toFixed(2)}` 
+        }
+      });
+    }
+
+    if (amount > availableForWithdrawal) {
       return res.status(400).json({
         meta: { 
           statusCode: 400, 
@@ -327,7 +342,7 @@ exports.getWithdrawalStats = async (req, res) => {
     // Calculate already withdrawn
     const totalWithdrawn = user.totalWithdrawn || 0;
     
-    // UPDATED: Available for withdrawal = total earnings - already withdrawn (100% available)
+    // Available for withdrawal = total earnings - already withdrawn (100% available)
     const availableForWithdrawal = Math.max(0, totalEarnings - totalWithdrawn);
 
     // Check withdrawal timing
@@ -340,16 +355,17 @@ exports.getWithdrawalStats = async (req, res) => {
       referralEarnings: `$${referralEarnings.toFixed(2)}`,
       totalWithdrawn: `$${totalWithdrawn.toFixed(2)}`,
       availableBalance: `$${availableForWithdrawal.toFixed(2)}`,
-      withdrawalLimit: "100% of total earnings", // UPDATED: Changed from 50% to 100%
+      withdrawalLimit: "100% of total earnings - No minimum limit", // UPDATED: Clarified no minimum
       remainingBalance: `$${Math.max(0, totalEarnings - totalWithdrawn).toFixed(2)}`,
       
-      // Withdrawal timing info
-      canWithdraw: withdrawalCheck.canWithdraw && availableForWithdrawal >= 30,
+      // UPDATED: Withdrawal timing info - removed $30 minimum check
+      canWithdraw: withdrawalCheck.canWithdraw && availableForWithdrawal > 0, // Changed from >= 30 to > 0
       withdrawalMessage: withdrawalCheck.message,
       nextWithdrawalDate: withdrawalCheck.canWithdraw ? "Available now (Friday)" : 
                          (withdrawalCheck.reason === 'not_friday' ? nextFriday.toDateString() : withdrawalCheck.message),
       isFriday: new Date().getDay() === 5,
-      withdrawalSchedule: "Every Friday (14-day interval)",
+      withdrawalSchedule: "Every Friday (14-day interval) - Any amount available",
+      minimumWithdrawal: "No minimum limit", // ADDED: Clarification
       ...(withdrawalCheck.daysRemaining && { daysUntilNextWithdrawal: withdrawalCheck.daysRemaining })
     };
 

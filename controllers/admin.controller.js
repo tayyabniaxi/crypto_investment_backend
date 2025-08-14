@@ -24,15 +24,34 @@ const awardReferralBonus = async (approvedUser) => {
       return { success: true, message: 'Bonus already awarded' };
     }
 
-    const referralBonus = 3.00;
+    // FIXED: Calculate 3% of the investment amount instead of fixed $3
+    const investmentValue = approvedUser.selectedPlan?.investmentValue || 0;
+    
+    // If investmentValue is not available, extract from investmentAmount string
+    let investmentAmount = 0;
+    if (investmentValue > 0) {
+      investmentAmount = investmentValue;
+    } else if (approvedUser.selectedPlan?.investmentAmount) {
+      // Extract number from string like "$100", "$200", etc.
+      investmentAmount = parseFloat(approvedUser.selectedPlan.investmentAmount.replace('$', ''));
+    }
+
+    if (investmentAmount <= 0) {
+      return { success: false, message: 'Invalid investment amount for referral calculation' };
+    }
+
+    // Calculate 3% of investment amount
+    const referralBonus = (investmentAmount * 3) / 100;
+    
+    console.log(`💰 Calculating referral bonus: ${investmentAmount} × 3% = $${referralBonus.toFixed(2)}`);
     
     const referralEarning = {
       fromUserId: approvedUser._id,
       fromUserEmail: approvedUser.email,
       fromUserPlan: approvedUser.selectedPlan?.planName || 'unknown',
       commissionAmount: referralBonus,
-      commissionPercentage: 0,
-      originalProfitAmount: 0,
+      commissionPercentage: 0, // 0 indicates signup bonus
+      originalProfitAmount: investmentAmount, // Store investment amount for reference
       earnedAt: new Date(),
       status: 'paid'
     };
@@ -47,14 +66,18 @@ const awardReferralBonus = async (approvedUser) => {
 
     await referrer.save();
 
+    console.log(`✅ Referral bonus awarded: $${referralBonus.toFixed(2)} (3% of $${investmentAmount}) to ${referrer.email}`);
+
     return {
       success: true,
       referrerEmail: referrer.email,
       bonusAmount: referralBonus,
+      investmentAmount: investmentAmount,
       newBalance: referrer.totalBalance
     };
     
   } catch (error) {
+    console.error('Error awarding referral bonus:', error);
     return { success: false, error: error.message };
   }
 };
@@ -285,14 +308,14 @@ exports.getUserProfitHistory = async (req, res) => {
       }
     }
 
-    // Format referral earnings for display
+    // UPDATED: Format referral earnings with correct descriptions
     const referralHistory = (user.referralEarnings || []).map(earning => ({
       date: new Date(earning.earnedAt).toLocaleDateString(),
       fromUser: earning.fromUserEmail,
-      type: earning.commissionPercentage === 0 ? 'Signup Bonus' : 'Daily Commission',
+      type: earning.commissionPercentage === 0 ? 'Signup Bonus (3% of investment)' : 'Daily Commission (20% of daily profit)',
       amount: `$${earning.commissionAmount.toFixed(2)}`,
-      percentage: earning.commissionPercentage === 0 ? 'N/A' : `${earning.commissionPercentage}%`,
-      originalProfit: earning.commissionPercentage === 0 ? 'N/A' : `$${earning.originalProfitAmount.toFixed(2)}`,
+      percentage: earning.commissionPercentage === 0 ? '3% of investment' : `${earning.commissionPercentage}% of daily profit`,
+      originalProfit: earning.commissionPercentage === 0 ? `$${earning.originalProfitAmount.toFixed(2)} (investment)` : `$${earning.originalProfitAmount.toFixed(2)} (daily profit)`,
       status: earning.status
     }));
 
@@ -375,7 +398,7 @@ exports.updateUserStatus = async (req, res) => {
 
       let responseMessage = "User approved successfully. Daily profits will start automatically.";
       if (bonusResult?.success && bonusResult?.referrerEmail) {
-        responseMessage += ` Referral bonus of ${bonusResult.bonusAmount} awarded to ${bonusResult.referrerEmail}.`;
+        responseMessage += ` Referral bonus of $${bonusResult.bonusAmount.toFixed(2)} (3% of $${bonusResult.investmentAmount}) awarded to ${bonusResult.referrerEmail}.`;
       }
 
       return res.status(200).json({
@@ -399,6 +422,7 @@ exports.updateUserStatus = async (req, res) => {
     }
 
   } catch (error) {
+    console.error("Error updating user status:", error);
     return res.status(500).json({
       meta: { statusCode: 500, status: false, message: "Server error" }
     });

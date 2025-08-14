@@ -17,6 +17,7 @@ const investmentPlanSchema = new mongoose.Schema({
         required: true 
     },
     investmentAmount: { type: String, required: true },
+    investmentValue: { type: Number, required: true }, // Added numeric value for calculations
     dailyReturn: { type: String, required: true },
     weeklyIncome: { type: String, required: true },
     isActive: { type: Boolean, default: true },

@@ -229,13 +229,43 @@ exports.signup = async (req, res) => {
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const planDataMap = {
-      bronze: { investmentAmount: "$100", dailyReturn: "2.00%", weeklyIncome: "10.00%" },
-      silver: { investmentAmount: "$200", dailyReturn: "4.00%", weeklyIncome: "20.00%" },
-      gold: { investmentAmount: "$300", dailyReturn: "6.00%", weeklyIncome: "30.00%" },
-      platinum: { investmentAmount: "$500", dailyReturn: "10.00%", weeklyIncome: "50.00%" },
-      diamond: { investmentAmount: "$1000", dailyReturn: "20.00%", weeklyIncome: "100.00%" },
-      elite: { investmentAmount: "$5000", dailyReturn: "100.00%", weeklyIncome: "500.00%" }
-    };
+  bronze: { 
+    investmentAmount: "$100", 
+    dailyReturn: "$2.00",        // FIXED: Dollar format, not percentage
+    weeklyIncome: "$10.00",      // FIXED: 5 working days × $2.00
+    investmentValue: 100 
+  },
+  silver: { 
+    investmentAmount: "$200", 
+    dailyReturn: "$4.00",        // FIXED: Dollar format, not percentage
+    weeklyIncome: "$20.00",      // FIXED: 5 working days × $4.00
+    investmentValue: 200 
+  },
+  gold: { 
+    investmentAmount: "$300", 
+    dailyReturn: "$6.00",        // FIXED: Dollar format, not percentage
+    weeklyIncome: "$30.00",      // FIXED: 5 working days × $6.00
+    investmentValue: 300 
+  },
+  platinum: { 
+    investmentAmount: "$500", 
+    dailyReturn: "$10.00",       // FIXED: Dollar format, not percentage
+    weeklyIncome: "$50.00",      // FIXED: 5 working days × $10.00
+    investmentValue: 500 
+  },
+  diamond: { 
+    investmentAmount: "$1000", 
+    dailyReturn: "$20.00",       // FIXED: Dollar format, not percentage
+    weeklyIncome: "$100.00",     // FIXED: 5 working days × $20.00
+    investmentValue: 1000 
+  },
+  elite: { 
+    investmentAmount: "$5000", 
+    dailyReturn: "$100.00",      // FIXED: Dollar format, not percentage
+    weeklyIncome: "$500.00",     // FIXED: 5 working days × $100.00
+    investmentValue: 5000 
+  }
+};
 
     const planData = planDataMap[selectedPlan.toLowerCase()];
     console.log('Plan Data:', planData);
@@ -244,7 +274,7 @@ exports.signup = async (req, res) => {
     if (req.file) {
       const isS3Upload = !!req.file.location;
       const fileUrl = isS3Upload ? req.file.location :
-        `${config.get("serverBaseUrl") || 'http://localhost:5001'}/uploads/screenshots/${req.file.filename}`;
+        `${config.get("serverBaseUrl") || 'http://localhost:5000'}/uploads/screenshots/${req.file.filename}`;
       const s3Key = req.file.key || req.file.filename;
       const uniqueKey = `${Date.now()}_${require('uuid').v4()}`;
 
@@ -269,6 +299,7 @@ exports.signup = async (req, res) => {
         investmentAmount: planData.investmentAmount,
         dailyReturn: planData.dailyReturn,
         weeklyIncome: planData.weeklyIncome,
+        investmentValue: planData.investmentValue, // Store numeric value for calculations
         isActive: false,
         startDate: null,
         totalEarned: 0
@@ -285,17 +316,21 @@ exports.signup = async (req, res) => {
     console.log('User object before save:', {
       email: newUser.email,
       referredBy: newUser.referredBy,
-      selectedPlan: newUser.selectedPlan.planName
+      selectedPlan: newUser.selectedPlan.planName,
+      investmentValue: newUser.selectedPlan.investmentValue
     });
 
     // Save the new user first
     await newUser.save();
     console.log('✅ New user saved successfully');
 
-    // NOTE: Referral bonus will be awarded when admin approves the account
+    // UPDATED: Award 3% of investment amount as referral bonus when admin approves the account
     if (referrerUser) {
+      const investmentAmount = planData.investmentValue; // Get numeric investment value
+      const referralBonusAmount = (investmentAmount * 3) / 100; // 3% of investment amount
+      
       console.log(`📝 Referral relationship established: ${newUser.email} referred by ${referrerUser.email}`);
-      console.log(`⏳ $3 bonus will be awarded to ${referrerUser.email} when ${newUser.email} gets approved by admin`);
+      console.log(`💰 $${referralBonusAmount.toFixed(2)} (3% of $${investmentAmount} investment) will be awarded to ${referrerUser.email} when ${newUser.email} gets approved by admin`);
     }
 
     const token = jwt.sign(
@@ -305,7 +340,7 @@ exports.signup = async (req, res) => {
     );
 
     const successMessage = referrerUser ? 
-      `User registered successfully with plan. Referral bonus will be awarded when account is approved!` : 
+      `User registered successfully with plan. Referral bonus (3% of investment) will be awarded when account is approved!` : 
       "User registered successfully with plan.";
 
     console.log('✅ Signup completed:', successMessage);
